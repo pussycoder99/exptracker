@@ -20,6 +20,15 @@ export async function runTaxOptimization(
 }
 
 export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ success: boolean; message: string; count?: number }> {
+  // Critical check for environment variable configuration on the server (Netlify)
+  if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+    console.error('CRITICAL: Firebase Project ID is not configured in server environment variables.');
+    return { 
+      success: false, 
+      message: 'Server configuration error: Firebase Project ID is missing. Please ensure environment variables are set in your hosting provider (Netlify).' 
+    };
+  }
+  
   if (!expenses || expenses.length === 0) {
     return { success: true, message: 'No expenses to save.', count: 0 };
   }
@@ -47,12 +56,21 @@ export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ suc
         count: successfulSaves 
     };
   } catch (error) {
-    console.error('Error saving expenses to Firebase:', error);
-    let errorMessage = 'Failed to save expenses to Firebase.';
+    console.error('Detailed error saving expenses to Firebase:', error);
+    // Attempt to get more specific error information
+    let specificMessage = "An unknown error occurred during the save operation.";
     if (error instanceof Error) {
-        errorMessage += ` Details: ${error.message}`;
+        specificMessage = error.message;
+        // You can check for specific Firebase error codes here if needed
+        // e.g., if ((error as any).code === 'permission-denied') { ... }
     }
-    return { success: false, message: errorMessage };
+    // Also log the stringified error for more details in server logs
+    console.error('Stringified error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    
+    return { 
+        success: false, 
+        message: `Failed to save expenses to Firebase. Server error: ${specificMessage}. Check server logs on Netlify for more details.` 
+    };
   }
 }
 
@@ -66,7 +84,6 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
     const data = doc.data();
     let expenseDate: Date;
 
-    // Robust date handling
     if (data.date && typeof data.date.toDate === 'function') {
       expenseDate = (data.date as Timestamp).toDate();
     } else {
@@ -74,7 +91,6 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
       expenseDate = new Date(); 
     }
 
-    // Ensure amount is a number, default to 0 if not
     const amount = typeof data.amount === 'number' ? data.amount : 0;
     if (typeof data.amount !== 'number') {
       console.warn(`Document ${doc.id} has an invalid or missing 'amount' field. Value: ${data.amount}. Using 0 as fallback.`);
@@ -83,8 +99,8 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
     expenses.push({
       id: doc.id,
       expenseFor: data.expenseFor || 'N/A',
-      employeeName: data.employeeName, // Optional in type
-      domainPanelName: data.domainPanelName, // Optional in type
+      employeeName: data.employeeName,
+      domainPanelName: data.domainPanelName,
       otherExpenseDetails: data.otherExpenseDetails || 'No details',
       amount: amount,
       currency: data.currency || 'N/A',
@@ -93,9 +109,8 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
       date: expenseDate,
       paidBy: data.paidBy || 'N/A',
       approvedBy: data.approvedBy || 'N/A',
-      location: data.location // Optional in type
+      location: data.location 
     });
   });
   return expenses;
 }
-
