@@ -22,10 +22,10 @@ export async function runTaxOptimization(
 export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ success: boolean; message: string; count?: number }> {
   // Critical check for environment variable configuration on the server (Netlify)
   if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
-    console.error('CRITICAL: Firebase Project ID is not configured in server environment variables.');
+    console.error('CRITICAL_SAVE_ERROR: The environment variable NEXT_PUBLIC_FIREBASE_PROJECT_ID is not set in the Netlify server environment. This is required for Firebase initialization during save operations.');
     return { 
       success: false, 
-      message: 'Server configuration error: Firebase Project ID is missing. Please ensure environment variables are set in your hosting provider (Netlify).' 
+      message: 'Critical Server Configuration Error: The environment variable NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in the Netlify server environment. Cannot save expenses. Please verify this variable in your Netlify site settings and re-deploy.' 
     };
   }
   
@@ -61,11 +61,8 @@ export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ suc
     let specificMessage = "An unknown error occurred during the save operation.";
     if (error instanceof Error) {
         specificMessage = error.message;
-        // You can check for specific Firebase error codes here if needed
-        // e.g., if ((error as any).code === 'permission-denied') { ... }
     }
-    // Also log the stringified error for more details in server logs
-    console.error('Stringified error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    console.error('Stringified error details during save:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     
     return { 
         success: false, 
@@ -117,21 +114,18 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
 
 export async function checkFirebaseConnection(): Promise<{ connected: boolean; message: string }> {
   if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
-    return { connected: false, message: 'Firebase Project ID is not configured on the server.' };
+    console.error("SERVER_CONFIG_ERROR: The environment variable NEXT_PUBLIC_FIREBASE_PROJECT_ID is not set in the Netlify server environment. This is required for Firebase initialization.");
+    return { 
+        connected: false, 
+        message: 'Critical Server Configuration Error: The environment variable NEXT_PUBLIC_FIREBASE_PROJECT_ID is missing in the Netlify server environment. Please verify this variable in your Netlify site settings and re-deploy.' 
+    };
   }
   try {
-    // Attempt a very lightweight Firestore operation.
-    // Querying a potentially non-existent collection with a limit of 1 is a low-impact way.
-    // If this doesn't throw an error related to connectivity or permissions that block even this,
-    // we can assume basic connectivity.
     const testCollectionRef = collection(db, '__fb_connection_test__');
     await getDocs(query(testCollectionRef, limit(1)));
     return { connected: true, message: 'Successfully connected to Firestore.' };
   } catch (error: any) {
-    console.error('Firebase connection check failed:', error);
-    // Provide a generic user-facing message, but log the specific error server-side.
-    // Error messages can be complex (e.g. permission denied if rules are strict).
-    // For the user, the outcome is "cannot connect".
+    console.error('Firebase connection check failed with error:', error);
     let userMessage = 'An error occurred while checking the connection.';
     if (error.message) {
         userMessage = error.message;
