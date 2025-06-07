@@ -1,18 +1,21 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import type { Expense } from '@/lib/types';
 import { fetchExpensesFromFirebase } from '@/lib/actions';
 import { generateExpenseReportPDF, downloadPdf } from '@/lib/pdfGenerator';
-import { Loader2, Search, FileDown } from 'lucide-react';
+import { Loader2, Search, FileDown, ShieldAlert, KeyRound } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+
+const ADMIN_PASSWORD = "Aman123@@@"; // Hardcoded password - NOT FOR PRODUCTION
 
 export default function AdminPage() {
   const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
@@ -22,7 +25,13 @@ export default function AdminPage() {
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const { toast } = useToast();
 
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+
   useEffect(() => {
+    if (!isAuthenticated) return; // Don't load expenses if not authenticated
+
     async function loadExpenses() {
       setIsLoading(true);
       setError(null);
@@ -39,7 +48,7 @@ export default function AdminPage() {
       }
     }
     loadExpenses();
-  }, [toast]);
+  }, [toast, isAuthenticated]);
 
   const filteredExpenses = useMemo(() => {
     if (!searchTerm.trim()) return allExpenses;
@@ -47,7 +56,7 @@ export default function AdminPage() {
     return allExpenses.filter(expense =>
       Object.entries(expense).some(([key, value]) => {
         if (value === null || typeof value === 'undefined') return false;
-        if (key === 'location' || key === 'id') return false; // Don't search by location object or id
+        if (key === 'location' || key === 'id') return false; 
 
         let stringValue = '';
         if (typeof value === 'string') {
@@ -57,7 +66,7 @@ export default function AdminPage() {
         } else if (value instanceof Date) {
           stringValue = value.toLocaleDateString().toLowerCase();
         } else {
-          return false; // Skip other types for now
+          return false; 
         }
         return stringValue.includes(lowerSearchTerm);
       })
@@ -72,7 +81,7 @@ export default function AdminPage() {
     setIsDownloadingPdf(true);
     toast({ title: "Generating PDF...", description: "Please wait." });
     try {
-      const pdfBytes = await generateExpenseReportPDF(filteredExpenses, null); // Pass null for geolocation
+      const pdfBytes = await generateExpenseReportPDF(filteredExpenses, null); 
       downloadPdf(pdfBytes, `Admin_Expense_Report_${new Date().toISOString().split('T')[0]}.pdf`);
       toast({ title: "PDF Generated", description: "Admin expense report PDF has been downloaded." });
     } catch (err) {
@@ -83,6 +92,60 @@ export default function AdminPage() {
       setIsDownloadingPdf(false);
     }
   };
+
+  const handlePasswordSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setAuthError(null);
+      setPasswordInput(''); // Clear password field
+      toast({ title: "Access Granted", description: "Welcome to the Admin Dashboard." });
+    } else {
+      setAuthError("Incorrect password. Please try again.");
+      setPasswordInput(''); // Clear password field
+      toast({ title: "Access Denied", description: "Incorrect password.", variant: "destructive" });
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <AppLayout>
+        <div className="container mx-auto p-4 md:p-8 flex justify-center items-center min-h-[calc(100vh-200px)]">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader>
+              <CardTitle className="text-2xl font-headline text-primary flex items-center">
+                <KeyRound className="mr-2 h-6 w-6" /> Admin Access Required
+              </CardTitle>
+              <CardDescription>
+                Please enter the password to access the admin dashboard.
+              </CardDescription>
+            </CardHeader>
+            <form onSubmit={handlePasswordSubmit}>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="admin-password">Password</Label>
+                  <Input
+                    id="admin-password"
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="Enter admin password"
+                    className="text-base py-2.5"
+                  />
+                </div>
+                {authError && <p className="text-sm text-destructive flex items-center"><ShieldAlert className="h-4 w-4 mr-1"/>{authError}</p>}
+              </CardContent>
+              <CardFooter>
+                <Button type="submit" className="w-full">
+                  Unlock Dashboard
+                </Button>
+              </CardFooter>
+            </form>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
