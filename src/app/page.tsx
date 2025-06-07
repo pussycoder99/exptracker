@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useGeolocation } from '@/hooks/use-geolocation';
 import type { Expense, GeolocationData, TaxOptimizationOutput } from '@/lib/types';
-import { runTaxOptimization, saveExpensesToFirebase } from '@/lib/actions';
+import { runTaxOptimization, saveExpensesToFirebase, checkFirebaseConnection } from '@/lib/actions';
 import { generateExpenseReportPDF, downloadPdf } from '@/lib/pdfGenerator';
-import { FileText, Loader2, Save } from 'lucide-react'; // Added Save icon
+import { FileText, Loader2, Save, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function HomePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -27,6 +27,9 @@ export default function HomePage() {
   const { location, error: geoError, getLocation, isLoading: isLoadingGeo } = useGeolocation();
   const { toast } = useToast();
 
+  const [firebaseStatus, setFirebaseStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [firebaseStatusMessage, setFirebaseStatusMessage] = useState('Checking Firebase connection...');
+
   useEffect(() => {
     getLocation();
   }, [getLocation]);
@@ -40,6 +43,27 @@ export default function HomePage() {
       });
     }
   }, [geoError, toast]);
+
+  useEffect(() => {
+    async function verifyConnection() {
+      try {
+        const result = await checkFirebaseConnection();
+        if (result.connected) {
+          setFirebaseStatus('connected');
+          setFirebaseStatusMessage('The App is connected to the database.');
+        } else {
+          setFirebaseStatus('error');
+          setFirebaseStatusMessage(`Sorry Cannot connect to the Firestore Database: ${result.message}`);
+        }
+      } catch (err: any) {
+        setFirebaseStatus('error');
+        setFirebaseStatusMessage(`Sorry Cannot connect to the Firestore Database: ${err.message}`);
+        console.error("Error checking Firebase connection on client:", err);
+      }
+    }
+    verifyConnection();
+  }, []);
+
 
   const handleAddExpense = useCallback((newExpenseData: Omit<Expense, 'id' | 'location'>) => {
     setIsSubmittingForm(true);
@@ -169,7 +193,25 @@ export default function HomePage() {
   return (
     <AppLayout>
       <div className="container mx-auto p-4 md:p-8">
-        <h1 className="text-3xl font-headline font-bold mb-8 text-center text-primary">SNBD Expense Tracker</h1>
+        <h1 className="text-3xl font-headline font-bold mb-2 text-center text-primary">SNBD Expense Tracker</h1>
+        
+        <div className="mb-6 text-center py-2">
+          {firebaseStatus === 'checking' && (
+            <p className="flex items-center justify-center text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {firebaseStatusMessage}
+            </p>
+          )}
+          {firebaseStatus === 'connected' && (
+            <p className="flex items-center justify-center text-sm text-green-600 dark:text-green-500">
+              <CheckCircle2 className="mr-2 h-4 w-4" /> {firebaseStatusMessage}
+            </p>
+          )}
+          {firebaseStatus === 'error' && (
+            <p className="flex items-center justify-center text-sm text-red-600 dark:text-red-500">
+              <AlertTriangle className="mr-2 h-4 w-4" /> {firebaseStatusMessage}
+            </p>
+          )}
+        </div>
         
         {isLoadingGeo && <p className="text-center text-muted-foreground mb-4">Fetching location...</p>}
 
@@ -185,7 +227,7 @@ export default function HomePage() {
                     {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
                     Generate PDF
                   </Button>
-                  <Button onClick={handleSaveToFirebase} disabled={isSavingToFirebase || expenses.length === 0} className="w-full sm:w-auto">
+                  <Button onClick={handleSaveToFirebase} disabled={isSavingToFirebase || expenses.length === 0 || firebaseStatus !== 'connected'} className="w-full sm:w-auto">
                     {isSavingToFirebase ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                     Save Expenses
                   </Button>

@@ -5,7 +5,7 @@ import { taxOptimizationAssistant } from '@/ai/flows/tax-optimization-assistant'
 import type { TaxOptimizationAssistantInput, TaxOptimizationAssistantOutput } from '@/ai/flows/tax-optimization-assistant';
 import type { Expense } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, Timestamp, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, getDocs, query, orderBy, limit } from 'firebase/firestore';
 
 export async function runTaxOptimization(
   input: TaxOptimizationAssistantInput
@@ -113,4 +113,35 @@ export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
     });
   });
   return expenses;
+}
+
+export async function checkFirebaseConnection(): Promise<{ connected: boolean; message: string }> {
+  if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+    return { connected: false, message: 'Firebase Project ID is not configured on the server.' };
+  }
+  try {
+    // Attempt a very lightweight Firestore operation.
+    // Querying a potentially non-existent collection with a limit of 1 is a low-impact way.
+    // If this doesn't throw an error related to connectivity or permissions that block even this,
+    // we can assume basic connectivity.
+    const testCollectionRef = collection(db, '__fb_connection_test__');
+    await getDocs(query(testCollectionRef, limit(1)));
+    return { connected: true, message: 'Successfully connected to Firestore.' };
+  } catch (error: any) {
+    console.error('Firebase connection check failed:', error);
+    // Provide a generic user-facing message, but log the specific error server-side.
+    // Error messages can be complex (e.g. permission denied if rules are strict).
+    // For the user, the outcome is "cannot connect".
+    let userMessage = 'An error occurred while checking the connection.';
+    if (error.message) {
+        userMessage = error.message;
+    }
+    if (error.code === 'permission-denied') {
+        userMessage = "Permission denied. Check Firestore security rules."
+    } else if (error.code === 'unauthenticated') {
+        userMessage = "Authentication is required and has failed or has not yet been provided."
+    }
+    
+    return { connected: false, message: userMessage };
+  }
 }
