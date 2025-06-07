@@ -121,13 +121,15 @@ export async function checkFirebaseConnection(): Promise<{ connected: boolean; m
     };
   }
   try {
-    const testCollectionRef = collection(db, '__fb_connection_test__');
+    // Using a non-reserved collection name for the test
+    const testCollectionRef = collection(db, '_firebase_connection_test_docs_'); 
     await getDocs(query(testCollectionRef, limit(1)));
     return { connected: true, message: 'Successfully connected to Firestore.' };
   } catch (error: any) {
     console.error('Firebase connection check failed with error:', error);
     let userMessage = 'An error occurred while checking the connection.';
     if (error.message) {
+        // Firestore often includes useful details in the message
         userMessage = error.message;
     }
     if (error.code === 'permission-denied') {
@@ -135,7 +137,10 @@ export async function checkFirebaseConnection(): Promise<{ connected: boolean; m
     } else if (error.code === 'unauthenticated') {
         userMessage = "Authentication is required and has failed or has not yet been provided."
     }
+    // The error "Collection id '__fb_connection_test__' is invalid because it is reserved."
+    // will be caught here and its message will be passed to the user.
     
     return { connected: false, message: userMessage };
   }
 }
+
