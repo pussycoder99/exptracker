@@ -58,28 +58,44 @@ export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ suc
 
 export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
   const expensesCollectionRef = collection(db, 'expenses');
-  const q = query(expensesCollectionRef, orderBy('date', 'desc')); // Order by date, newest first
+  const q = query(expensesCollectionRef, orderBy('date', 'desc')); 
   const querySnapshot = await getDocs(q);
   
   const expenses: Expense[] = [];
   querySnapshot.forEach((doc) => {
     const data = doc.data();
-    // Ensure that all fields of Expense are present, or provide defaults/handle missing data
+    let expenseDate: Date;
+
+    // Robust date handling
+    if (data.date && typeof data.date.toDate === 'function') {
+      expenseDate = (data.date as Timestamp).toDate();
+    } else {
+      console.warn(`Document ${doc.id} has an invalid or missing 'date' field. Value: ${data.date}. Using current date as fallback.`);
+      expenseDate = new Date(); 
+    }
+
+    // Ensure amount is a number, default to 0 if not
+    const amount = typeof data.amount === 'number' ? data.amount : 0;
+    if (typeof data.amount !== 'number') {
+      console.warn(`Document ${doc.id} has an invalid or missing 'amount' field. Value: ${data.amount}. Using 0 as fallback.`);
+    }
+
     expenses.push({
       id: doc.id,
       expenseFor: data.expenseFor || 'N/A',
-      employeeName: data.employeeName,
-      domainPanelName: data.domainPanelName,
+      employeeName: data.employeeName, // Optional in type
+      domainPanelName: data.domainPanelName, // Optional in type
       otherExpenseDetails: data.otherExpenseDetails || 'No details',
-      amount: data.amount || 0,
+      amount: amount,
       currency: data.currency || 'N/A',
       descriptionEnglish: data.descriptionEnglish || 'N/A',
       descriptionBangla: data.descriptionBangla || 'N/A',
-      date: (data.date as Timestamp).toDate(), // Convert Firestore Timestamp to JS Date
+      date: expenseDate,
       paidBy: data.paidBy || 'N/A',
       approvedBy: data.approvedBy || 'N/A',
-      location: data.location // This could be undefined if not set
-    } as Expense); // It's good practice to ensure the object conforms to the Expense type
+      location: data.location // Optional in type
+    });
   });
   return expenses;
 }
+
