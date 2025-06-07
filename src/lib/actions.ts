@@ -4,9 +4,8 @@
 import { taxOptimizationAssistant } from '@/ai/flows/tax-optimization-assistant';
 import type { TaxOptimizationAssistantInput, TaxOptimizationAssistantOutput } from '@/ai/flows/tax-optimization-assistant';
 import type { Expense } from '@/lib/types';
-import { db } from '@/lib/firebase'; // Import Firestore instance
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
-// import { format } from 'date-fns'; // No longer needed for Google Sheets
+import { db } from '@/lib/firebase';
+import { collection, addDoc, Timestamp, getDocs, query, orderBy } from 'firebase/firestore';
 
 export async function runTaxOptimization(
   input: TaxOptimizationAssistantInput
@@ -30,11 +29,9 @@ export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ suc
     let successfulSaves = 0;
 
     for (const expense of expenses) {
-      // Convert Date object to Firestore Timestamp
       const expenseData = {
         ...expense,
-        date: Timestamp.fromDate(new Date(expense.date)), // Ensure date is a Firestore Timestamp
-        // Ensure location is serializable or handle it appropriately
+        date: Timestamp.fromDate(new Date(expense.date)),
         location: expense.location ? { 
             latitude: expense.location.latitude, 
             longitude: expense.location.longitude 
@@ -57,4 +54,32 @@ export async function saveExpensesToFirebase(expenses: Expense[]): Promise<{ suc
     }
     return { success: false, message: errorMessage };
   }
+}
+
+export async function fetchExpensesFromFirebase(): Promise<Expense[]> {
+  const expensesCollectionRef = collection(db, 'expenses');
+  const q = query(expensesCollectionRef, orderBy('date', 'desc')); // Order by date, newest first
+  const querySnapshot = await getDocs(q);
+  
+  const expenses: Expense[] = [];
+  querySnapshot.forEach((doc) => {
+    const data = doc.data();
+    // Ensure that all fields of Expense are present, or provide defaults/handle missing data
+    expenses.push({
+      id: doc.id,
+      expenseFor: data.expenseFor || 'N/A',
+      employeeName: data.employeeName,
+      domainPanelName: data.domainPanelName,
+      otherExpenseDetails: data.otherExpenseDetails || 'No details',
+      amount: data.amount || 0,
+      currency: data.currency || 'N/A',
+      descriptionEnglish: data.descriptionEnglish || 'N/A',
+      descriptionBangla: data.descriptionBangla || 'N/A',
+      date: (data.date as Timestamp).toDate(), // Convert Firestore Timestamp to JS Date
+      paidBy: data.paidBy || 'N/A',
+      approvedBy: data.approvedBy || 'N/A',
+      location: data.location // This could be undefined if not set
+    } as Expense); // It's good practice to ensure the object conforms to the Expense type
+  });
+  return expenses;
 }
