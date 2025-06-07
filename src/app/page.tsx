@@ -12,7 +12,7 @@ import { useGeolocation } from '@/hooks/use-geolocation';
 import type { Expense, GeolocationData, TaxOptimizationOutput } from '@/lib/types';
 import { runTaxOptimization, saveExpensesToFirebase } from '@/lib/actions';
 import { generateExpenseReportPDF, downloadPdf } from '@/lib/pdfGenerator';
-import { FileText, Loader2 } from 'lucide-react';
+import { FileText, Loader2, Save } from 'lucide-react'; // Added Save icon
 
 export default function HomePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -21,7 +21,8 @@ export default function HomePage() {
   const [taxOptResult, setTaxOptResult] = useState<TaxOptimizationOutput | null>(null);
   const [isLoadingTaxOpt, setIsLoadingTaxOpt] = useState(false);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
-  const [isGeneratingPdfAndSending, setIsGeneratingPdfAndSending] = useState(false); // Combined state
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSavingToFirebase, setIsSavingToFirebase] = useState(false);
 
   const { location, error: geoError, getLocation, isLoading: isLoadingGeo } = useGeolocation();
   const { toast } = useToast();
@@ -50,7 +51,7 @@ export default function HomePage() {
     setExpenses(prev => [newExpense, ...prev]); // Add to beginning of list
     toast({
       title: 'Expense Added Locally',
-      description: `${newExpenseData.expenseFor} for ${newExpenseData.amount} ${newExpenseData.currency} added. Remember to 'Generate PDF & Send' to save to database.`,
+      description: `${newExpenseData.expenseFor} for ${newExpenseData.amount} ${newExpenseData.currency} added. Remember to 'Save Expenses' to save to the database.`,
     });
     setIsSubmittingForm(false);
   }, [location, toast]);
@@ -103,25 +104,46 @@ export default function HomePage() {
     });
   }, [toast]);
 
-  const handleGeneratePdfAndSend = async () => {
+  const handleGeneratePdf = async () => {
     if (expenses.length === 0) {
       toast({
         title: 'No Expenses',
-        description: 'Please add some expenses before generating a report.',
+        description: 'Please add some expenses before generating a PDF.',
         variant: 'destructive'
       });
       return;
     }
-    setIsGeneratingPdfAndSending(true);
-    toast({ title: 'Processing...', description: 'Generating PDF and sending data to Firebase.' });
-    
-    let pdfGenerated = false;
+    setIsGeneratingPdf(true);
+    toast({ title: 'Generating PDF...', description: 'Please wait.' });
     try {
       const pdfBytes = await generateExpenseReportPDF(expenses, location);
       downloadPdf(pdfBytes, `SNBD_Expense_Report_${new Date().toISOString().split('T')[0]}.pdf`);
       toast({ title: 'PDF Generated', description: 'Your expense report PDF has been downloaded.' });
-      pdfGenerated = true;
+    } catch (error) {
+      console.error("Error during PDF generation:", error);
+      const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+      toast({
+        title: 'PDF Generation Failed',
+        description: `Could not generate PDF: ${message}`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
+  const handleSaveToFirebase = async () => {
+    if (expenses.length === 0) {
+      toast({
+        title: 'No Expenses',
+        description: 'Please add some expenses before saving to the database.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    setIsSavingToFirebase(true);
+    toast({ title: 'Saving to Firebase...', description: 'Please wait.' });
+    try {
       const sendResult = await saveExpensesToFirebase(expenses);
       if (sendResult.success) {
         toast({ title: 'Data Saved to Firebase', description: sendResult.message });
@@ -130,27 +152,19 @@ export default function HomePage() {
       } else {
         toast({ title: 'Firebase Save Failed', description: sendResult.message, variant: 'destructive' });
       }
-
     } catch (error) {
-      console.error("Error during PDF generation or Firebase send:", error);
+      console.error("Error saving to Firebase:", error);
       const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-      if (pdfGenerated) {
-        toast({
-          title: 'Firebase Send Failed',
-          description: `PDF was generated, but sending data failed: ${message}`,
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Operation Failed',
-          description: `Could not generate PDF or send data: ${message}`,
-          variant: 'destructive',
-        });
-      }
+      toast({
+        title: 'Firebase Save Failed',
+        description: `Could not save data: ${message}`,
+        variant: 'destructive',
+      });
     } finally {
-      setIsGeneratingPdfAndSending(false);
+      setIsSavingToFirebase(false);
     }
   };
+
 
   return (
     <AppLayout>
@@ -164,12 +178,18 @@ export default function HomePage() {
             <ExpenseForm onSubmit={handleAddExpense} isSubmitting={isSubmittingForm} />
           </div>
           <div className="lg:col-span-3">
-            <div className="flex justify-between items-center mb-4 sticky top-0 bg-background py-2 z-10">
+            <div className="flex flex-col sm:flex-row justify-end items-center mb-4 sticky top-0 bg-background py-2 z-10 gap-2">
               {expenses.length > 0 && (
-                <Button onClick={handleGeneratePdfAndSend} disabled={isGeneratingPdfAndSending} className="ml-auto">
-                  {isGeneratingPdfAndSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                  Generate PDF & Save
-                </Button>
+                <>
+                  <Button onClick={handleGeneratePdf} disabled={isGeneratingPdf || expenses.length === 0} className="w-full sm:w-auto">
+                    {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                    Generate PDF
+                  </Button>
+                  <Button onClick={handleSaveToFirebase} disabled={isSavingToFirebase || expenses.length === 0} className="w-full sm:w-auto">
+                    {isSavingToFirebase ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Expenses
+                  </Button>
+                </>
               )}
             </div>
             <ExpenseList expenses={expenses} onOptimizeTax={handleOpenTaxOptimization} />
