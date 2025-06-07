@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -20,7 +21,7 @@ export default function HomePage() {
   const [taxOptResult, setTaxOptResult] = useState<TaxOptimizationOutput | null>(null);
   const [isLoadingTaxOpt, setIsLoadingTaxOpt] = useState(false);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isGeneratingPdfAndSending, setIsGeneratingPdfAndSending] = useState(false); // Combined state
 
   const { location, error: geoError, getLocation, isLoading: isLoadingGeo } = useGeolocation();
   const { toast } = useToast();
@@ -48,8 +49,8 @@ export default function HomePage() {
     };
     setExpenses(prev => [newExpense, ...prev]); // Add to beginning of list
     toast({
-      title: 'Expense Added',
-      description: `${newExpenseData.expenseFor} for ${newExpenseData.amount} ${newExpenseData.currency} added successfully.`,
+      title: 'Expense Added Locally',
+      description: `${newExpenseData.expenseFor} for ${newExpenseData.amount} ${newExpenseData.currency} added. Remember to 'Generate PDF & Send' to save to database.`,
     });
     setIsSubmittingForm(false);
   }, [location, toast]);
@@ -98,35 +99,56 @@ export default function HomePage() {
     setIsTaxModalOpen(false);
     toast({
       title: 'Description Updated',
-      description: 'Bangla description has been updated.',
+      description: 'Bangla description has been updated locally.',
     });
   }, [toast]);
 
   const handleGeneratePdfAndSend = async () => {
-    setIsGeneratingPdf(true);
-    toast({ title: 'Processing...', description: 'Generating PDF and preparing to send.' });
+    if (expenses.length === 0) {
+      toast({
+        title: 'No Expenses',
+        description: 'Please add some expenses before generating a report.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    setIsGeneratingPdfAndSending(true);
+    toast({ title: 'Processing...', description: 'Generating PDF and sending data to Firebase.' });
+    
+    let pdfGenerated = false;
     try {
       const pdfBytes = await generateExpenseReportPDF(expenses, location);
       downloadPdf(pdfBytes, `SNBD_Expense_Report_${new Date().toISOString().split('T')[0]}.pdf`);
       toast({ title: 'PDF Generated', description: 'Your expense report PDF has been downloaded.' });
+      pdfGenerated = true;
 
-      // Simulate sending to Firebase
       const sendResult = await saveExpensesToFirebase(expenses);
       if (sendResult.success) {
-        toast({ title: 'Data Sent (Simulated)', description: sendResult.message });
+        toast({ title: 'Data Saved to Firebase', description: sendResult.message });
+        // Optionally clear expenses after successful save
+        // setExpenses([]); 
       } else {
-        toast({ title: 'Send Failed (Simulated)', description: sendResult.message, variant: 'destructive' });
+        toast({ title: 'Firebase Save Failed', description: sendResult.message, variant: 'destructive' });
       }
 
     } catch (error) {
-      console.error("Error generating PDF or sending data:", error);
-      toast({
-        title: 'Operation Failed',
-        description: 'Could not generate PDF or send data.',
-        variant: 'destructive',
-      });
+      console.error("Error during PDF generation or Firebase send:", error);
+      const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+      if (pdfGenerated) {
+        toast({
+          title: 'Firebase Send Failed',
+          description: `PDF was generated, but sending data failed: ${message}`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Operation Failed',
+          description: `Could not generate PDF or send data: ${message}`,
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setIsGeneratingPdf(false);
+      setIsGeneratingPdfAndSending(false);
     }
   };
 
@@ -143,12 +165,10 @@ export default function HomePage() {
           </div>
           <div className="lg:col-span-3">
             <div className="flex justify-between items-center mb-4 sticky top-0 bg-background py-2 z-10">
-              {/* This h2 was here, ensuring it fits with the Card structure in ExpenseList */}
-              {/* <h2 className="text-2xl font-headline font-semibold">Expenses</h2> */}
               {expenses.length > 0 && (
-                <Button onClick={handleGeneratePdfAndSend} disabled={isGeneratingPdf} className="ml-auto">
-                  {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                  Generate PDF & Send
+                <Button onClick={handleGeneratePdfAndSend} disabled={isGeneratingPdfAndSending} className="ml-auto">
+                  {isGeneratingPdfAndSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                  Generate PDF & Save
                 </Button>
               )}
             </div>
@@ -169,3 +189,4 @@ export default function HomePage() {
     </AppLayout>
   );
 }
+
